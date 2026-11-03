@@ -31,12 +31,6 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${syne.variable} ${spaceGrotesk.variable}`}>
       <body>
-        {/* Preload Zama FHE SDK from CDN to avoid webpack bundler issues */}
-        <script
-          src="https://cdn.zama.org/relayer-sdk-js/0.4.2/relayer-sdk-js.umd.cjs"
-          type="text/javascript"
-          async
-        />
         <Providers cookies={cookies}>
           <Nav />
           {children}

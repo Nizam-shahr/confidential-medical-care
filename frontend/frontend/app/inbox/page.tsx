@@ -6,7 +6,7 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import type { ConsultationMeta } from "@/libs/types";
-import { encryptText, decryptHandles } from "@/libs/fhe-utils";
+import { encryptText, decryptHandlesDelegated } from "@/libs/fhe-utils";
 import { getErrorMessage } from "@/libs/errors";
 
 const STATUS_LABEL = ["Open", "Responded", "Closed"];
@@ -51,7 +51,7 @@ function TxOverlay({ title, sub, steps, activeStep }: {
 }
 
 function CaseDetail({ consult, onClose, onRefresh }: CaseDetailProps) {
-  const { wallet, provider } = useWallet();
+  const { wallet } = useWallet();
   const [complaint, setComplaint]     = useState("");
   const [responseText, setResponseText] = useState("");
   const [decrypting, setDecrypting]   = useState(false);
@@ -59,22 +59,33 @@ function CaseDetail({ consult, onClose, onRefresh }: CaseDetailProps) {
   const [status, setStatus]           = useState("");
   const charMax = 256;
 
+  const [delegated, setDelegated]     = useState<boolean | null>(null);
+
   // Guard: contract must be non-null to proceed
   const contract = wallet.contract;
 
+  useEffect(() => {
+    if (!contract) return;
+    (contract.isDoctorDelegated(consult.id) as Promise<boolean>).then(setDelegated).catch(() => setDelegated(null));
+  }, [contract, consult.id]);
+
+  // v3: the doctor decrypts on behalf of the patient's per-doctor wallet, via its delegation.
   const decryptComplaint = async () => {
-    if (!wallet.fhevmInstance || !contract || !provider) return;
+    if (!wallet.zama || !contract) return;
     try {
       setDecrypting(true);
-      setStatus("🔓 Requesting decryption from Zama relayer...");
+      setStatus("🔓 Requesting delegated decryption from Zama relayer...");
       const { handles, count } = await contract.getComplaintHandles(consult.id);
       const contractAddress = await contract.getAddress();
       const handleList = Array.from({ length: Number(count) }, (_, i) => handles[i] as string);
-      const text = await decryptHandles(handleList, contractAddress, wallet.account, wallet.fhevmInstance, provider);
+      const text = await decryptHandlesDelegated(handleList, contractAddress, consult.patient, wallet.zama);
       setComplaint(text);
       setStatus("");
     } catch (err: unknown) {
-      setStatus(`❌ Decryption failed: ${getErrorMessage(err)}`);
+      const msg = getErrorMessage(err);
+      setStatus(/not authorized|not delegated|delegation|not entitled/i.test(msg)
+        ? "❌ The patient has not delegated access to you, or has revoked it, or it expired, or closed the consultation. A new delegation can take a few seconds to reach Zama's gateway."
+        : `❌ Decryption failed: ${msg}`);
     } finally {
       setDecrypting(false);
     }
@@ -82,13 +93,13 @@ function CaseDetail({ consult, onClose, onRefresh }: CaseDetailProps) {
 
   const handleRespond = async () => {
     if (!responseText.trim()) { setStatus("Please write a response."); return; }
-    if (!wallet.fhevmInstance || !contract) { setStatus("FHE not ready."); return; }
+    if (!wallet.zama || !contract) { setStatus("FHE not ready."); return; }
     try {
       setStep("encrypting");
       setStatus("🔐 Encrypting your response with FHE...");
       const contractAddress = await contract.getAddress();
       const { handles, inputProof, chunkCount } = await encryptText(
-        responseText, contractAddress, wallet.account, wallet.fhevmInstance
+        responseText, contractAddress, wallet.account, wallet.zama
       );
       setStep("sending");
       setStatus("📡 Submitting encrypted response on-chain...");
@@ -118,7 +129,7 @@ function CaseDetail({ consult, onClose, onRefresh }: CaseDetailProps) {
         {decrypting && (
           <TxOverlay
             title="Decrypting Complaint"
-            sub="Please sign in your wallet. Zama is verifying your ACL permission."
+            sub="Please sign in your wallet. Zama is verifying the patient's delegation to you."
           />
         )}
         {(step === "encrypting" || step === "sending") && (
@@ -153,7 +164,10 @@ function CaseDetail({ consult, onClose, onRefresh }: CaseDetailProps) {
             <>
               <div className="fhe-box">
                 <span className="fhe-box-icon">🔒</span>
-                <p>Complaint is FHE-encrypted. Decrypt to read it. <strong>Patient identity stays hidden.</strong></p>
+                <p>
+                  Complaint is FHE-encrypted. Decrypt to read it. <strong>Patient identity stays hidden.</strong>
+                  {delegated === false && <> The patient has not given you access (or revoked it, closed the consultation, or it expired).</>}
+                </p>
               </div>
               <button className="btn btn-primary btn-sm" style={{ marginTop: ".6rem" }} onClick={decryptComplaint} disabled={decrypting}>
                 {decrypting ? <><span className="spinner" /> Decrypting...</> : "🔓 Decrypt Complaint"}
@@ -166,7 +180,7 @@ function CaseDetail({ consult, onClose, onRefresh }: CaseDetailProps) {
 
         {!consult.hasResponse && step !== "done" && (
           <div>
-            <div className="form-label" style={{ marginBottom: ".5rem" }}>Your Response (encrypted for patient only)</div>
+            <div className="form-label" style={{ marginBottom: ".5rem" }}>Your Response (encrypted for the patient; no other doctor can read it)</div>
             <div className="fhe-box" style={{ marginBottom: ".75rem" }}>
               <span className="fhe-box-icon">⚡</span>
               <p>Your response will be FHE-encrypted. <strong>Only the patient can decrypt it.</strong> You won&apos;t be able to re-read it after submission.</p>
@@ -296,7 +310,7 @@ function InboxContent() {
       <div className="section-header">
         <div>
           <h1 className="page-title">Doctor Inbox</h1>
-          <p className="page-sub">Patient identities are never revealed. Complaints are FHE-encrypted — only you can decrypt them.</p>
+          <p className="page-sub">Patient identities are never revealed. Complaints are FHE-encrypted; you can decrypt them only while the patient&apos;s delegation to you is active (14 days by default, ended early if the patient revokes access or closes). Your own reply is readable to you under the same delegation.</p>
         </div>
       </div>
 

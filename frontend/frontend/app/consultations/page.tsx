@@ -8,6 +8,9 @@ import { ethers } from "ethers";
 import type { ConsultationMeta, Doctor } from "@/libs/types";
 import { decryptHandles } from "@/libs/fhe-utils";
 import { getErrorMessage } from "@/libs/errors";
+import { CONTRACT_ADDRESS, DELEGATION_DAYS, PATIENT_WALLET_TOPUP_ETH } from "@/libs/config";
+import { fundIfNeeded, GAS_BUDGET } from "@/libs/patient-wallets";
+import { revokeThenClose } from "@/libs/delegation";
 
 const STATUS_LABEL = ["Open", "Doctor Responded", "Closed"];
 const STATUS_BADGE  = ["badge-blue", "badge-green", "badge-gray"];
@@ -28,73 +31,130 @@ function ConsultDetail({ consult, doctor, onClose, onRefresh }: {
   consult: ConsultationMeta; doctor: Doctor | null;
   onClose: () => void; onRefresh: () => void;
 }) {
-  const { wallet, provider }      = useWallet();
+  const { wallet, provider, getPatientWallet, getPatientSdk } = useWallet();
   const [response, setResponse]   = useState("");
   const [decrypting, setDecrypting] = useState(false);
-  const [closing, setClosing]     = useState(false);
-  const [regranting, setRegranting] = useState(false);
+  const [busy, setBusy]           = useState<"" | "closing" | "revoking" | "delegating">("");
   const [status, setStatus]       = useState("");
+  const [accessUntil, setAccessUntil] = useState<number | null>(null); // unix seconds; 0 = no delegation
 
   const contract = wallet.contract;
 
+  // Delegation from this consultation's patient wallet to its doctor (covers all consultations with that doctor).
+  const loadAccess = useCallback(async () => {
+    if (!doctor) return;
+    try {
+      const patientWallet = await getPatientWallet(consult.doctorId);
+      const { delegationExpiresAt } = await import("@/libs/zama");
+      setAccessUntil(await delegationExpiresAt(await getPatientSdk(consult.doctorId), CONTRACT_ADDRESS, patientWallet.address, doctor.wallet));
+    } catch (e) { console.error(e); }
+  }, [consult.doctorId, doctor, getPatientWallet, getPatientSdk]);
+
+  useEffect(() => { loadAccess(); }, [loadAccess]);
+
+  // Every patient action is sent from the per-doctor wallet, topped up from the main wallet if needed.
+  const asPatient = async (gasBudget: bigint) => {
+    if (!provider) throw new Error("Wallet not connected");
+    const patientWallet = await getPatientWallet(consult.doctorId);
+    await fundIfNeeded(patientWallet, await provider.getSigner(), gasBudget, ethers.parseEther(PATIENT_WALLET_TOPUP_ETH));
+    return patientWallet;
+  };
+
   const decryptResponse = async () => {
-    if (!wallet.fhevmInstance || !consult.hasResponse || !contract || !provider) return;
+    if (!consult.hasResponse || !contract) return;
     try {
       setDecrypting(true);
       setStatus("🔓 Requesting decryption from Zama relayer...");
       const { handles, count } = await contract.getResponseHandles(consult.id);
       const contractAddress = await contract.getAddress();
       const handleList = Array.from({ length: Number(count) }, (_, i) => handles[i] as string);
-      const text = await decryptHandles(handleList, contractAddress, wallet.account, wallet.fhevmInstance, provider);
+      const text = await decryptHandles(handleList, contractAddress, await getPatientSdk(consult.doctorId));
       setResponse(text);
       setStatus("");
     } catch (err: unknown) {
       const msg = getErrorMessage(err);
-      const isAcl = msg.includes("500") || msg.includes("execution reverted");
-      setStatus(isAcl
-        ? "⏳ ACL still propagating — wait 2-3 minutes then try again."
-        : `❌ Decryption failed: ${msg}`);
+      setStatus(`❌ Decryption failed: ${msg}`);
     } finally {
       setDecrypting(false);
     }
   };
 
-  const regrantAccess = async () => {
-    if (!contract) return;
+  const delegateAccess = async () => {
+    if (!doctor) return;
     try {
-      setRegranting(true);
-      setStatus("🔑 Re-granting doctor access on-chain...");
-      const tx: ethers.ContractTransactionResponse = await contract.grantDoctorAccess(consult.id);
-      setStatus("⏳ Confirming... (waiting 2 blocks)");
-      await tx.wait(2);
-      setStatus("✅ Access re-granted! Wait 3-5 minutes for Zama to propagate, then ask the doctor to decrypt.");
+      setBusy("delegating");
+      setStatus(`🔑 Delegating decryption to the doctor for ${DELEGATION_DAYS} days...`);
+      await asPatient(GAS_BUDGET.delegate);
+      const { delegateToDoctor } = await import("@/libs/zama");
+      await delegateToDoctor(await getPatientSdk(consult.doctorId), CONTRACT_ADDRESS, doctor.wallet);
+      setStatus(`✅ The doctor can decrypt your consultations with them for ${DELEGATION_DAYS} days, until you revoke access or close.`);
+      await loadAccess();
     } catch (err: unknown) {
       setStatus(`❌ ${getErrorMessage(err)}`);
     } finally {
-      setRegranting(false);
+      setBusy("");
     }
   };
 
+  const revokeDoctorAccess = async () => {
+    if (!doctor) throw new Error("Doctor not loaded");
+    const { revokeDoctor } = await import("@/libs/zama");
+    await revokeDoctor(await getPatientSdk(consult.doctorId), CONTRACT_ADDRESS, doctor.wallet);
+  };
+
+  const revokeAccess = async () => {
+    try {
+      setBusy("revoking");
+      setStatus("🚫 Revoking the doctor's decryption access...");
+      await asPatient(GAS_BUDGET.revoke);
+      await revokeDoctorAccess();
+      setStatus("✅ Access revoked for all your consultations with this doctor. The doctor can no longer decrypt them; anything they already read cannot be un-read.");
+      await loadAccess();
+    } catch (err: unknown) {
+      setStatus(`❌ ${getErrorMessage(err)}`);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  // One user action, up to two transactions: revoke the doctor's delegation (if active), then close.
   const handleClose = async () => {
     if (!contract) return;
     try {
-      setClosing(true);
-      const tx: ethers.ContractTransactionResponse = await contract.closeConsultation(consult.id);
-      await tx.wait();
+      setBusy("closing");
+      const patientWallet = await asPatient(GAS_BUDGET.revoke + GAS_BUDGET.close);
+      const asPatientContract = contract.connect(patientWallet) as ethers.Contract;
+      await revokeThenClose({
+        isDoctorDelegated: async () => (await contract.isDoctorDelegated(consult.id)) as boolean,
+        revoke: revokeDoctorAccess,
+        close: async () => {
+          const tx: ethers.ContractTransactionResponse = await asPatientContract.closeConsultation(consult.id);
+          await tx.wait();
+        },
+        onStep: (step) => {
+          if (step === "revoking") setStatus("🚫 Step 1/2: revoking the doctor's access...");
+          if (step === "closing") setStatus("📁 Closing the consultation...");
+        },
+      });
       onRefresh();
       onClose();
     } catch (err: unknown) {
       setStatus(`❌ ${getErrorMessage(err)}`);
+      await loadAccess();
     } finally {
-      setClosing(false);
+      setBusy("");
     }
   };
+
+  const accessActive = (accessUntil ?? 0) > 0;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
-        {decrypting && <TxOverlay title="Decrypting Response" sub="Please sign in your wallet. Zama is verifying your access permission." />}
-        {regranting && <TxOverlay title="Re-granting Doctor Access" sub="Submitting ACL permission on-chain. Please confirm in your wallet." />}
+        {decrypting && <TxOverlay title="Decrypting Response" sub="Zama is verifying your private patient wallet's access permission." />}
+        {busy === "delegating" && <TxOverlay title="Delegating Doctor Access" sub="Sending the delegation from your private patient wallet." />}
+        {busy === "revoking" && <TxOverlay title="Revoking Doctor Access" sub="Sending the revocation from your private patient wallet." />}
+        {busy === "closing" && <TxOverlay title="Closing Consultation" sub={accessActive ? "Revoking the doctor's access first, then closing (two transactions from your private patient wallet)." : "Sending the close from your private patient wallet."} />}
 
         <div className="modal-header">
           <h2 className="modal-title">Consultation #{consult.id}</h2>
@@ -116,10 +176,14 @@ function ConsultDetail({ consult, doctor, onClose, onRefresh }: {
         </div>
 
         <div className="card card--flat" style={{ marginBottom: "1rem" }}>
-          <div className="form-label" style={{ marginBottom: ".5rem" }}>Your Complaint</div>
+          <div className="form-label" style={{ marginBottom: ".5rem" }}>Doctor Access</div>
           <div className="fhe-box" style={{ marginBottom: 0 }}>
-            <span className="fhe-box-icon">🔒</span>
-            <p>Stored encrypted on-chain. Only you and your doctor can decrypt it.</p>
+            <span className="fhe-box-icon">{accessActive ? "🔓" : "🔒"}</span>
+            <p>
+              {accessUntil === null ? "Checking..."
+                : accessActive ? <>The doctor can decrypt your consultations with them, including their own reply, until <strong>{new Date(accessUntil! * 1000).toLocaleString()}</strong>. Revoking or closing ends this for all your consultations with this doctor. Anything the doctor has already read cannot be un-read.</>
+                : "The doctor cannot decrypt your consultations with them (access not granted, revoked or expired)."}
+            </p>
           </div>
         </div>
 
@@ -151,15 +215,20 @@ function ConsultDetail({ consult, doctor, onClose, onRefresh }: {
         )}
 
         <div className="modal-actions" style={{ flexWrap: "wrap", gap: ".6rem" }}>
-          {consult.status !== 2 && (
-            <button className="btn btn-ghost btn-sm" onClick={regrantAccess} disabled={regranting}
-              title="Use this if the doctor gets a decryption error">
-              {regranting ? <><span className="spinner" /> Re-granting...</> : "🔑 Re-grant Doctor Access"}
+          {consult.status !== 2 && accessActive && (
+            <button className="btn btn-ghost btn-sm" onClick={revokeAccess} disabled={busy !== ""}>
+              {busy === "revoking" ? <><span className="spinner" /> Revoking...</> : "🚫 Revoke Doctor Access"}
+            </button>
+          )}
+          {consult.status !== 2 && accessUntil === 0 && (
+            <button className="btn btn-ghost btn-sm" onClick={delegateAccess} disabled={busy !== ""}>
+              {busy === "delegating" ? <><span className="spinner" /> Delegating...</> : `🔑 Grant Doctor Access (${DELEGATION_DAYS} days)`}
             </button>
           )}
           {consult.status !== 2 && (
-            <button className="btn btn-ghost" onClick={handleClose} disabled={closing}>
-              {closing ? "Closing..." : "Close Consultation"}
+            <button className="btn btn-ghost" onClick={handleClose} disabled={busy !== ""}
+              title={accessActive ? "Revokes the doctor's access to all your consultations with this doctor, then closes this one (two transactions)." : undefined}>
+              {busy === "closing" ? "Closing..." : accessActive ? "Revoke Access & Close" : "Close Consultation"}
             </button>
           )}
           <button className="btn btn-ghost" onClick={onClose}>Done</button>
@@ -170,23 +239,38 @@ function ConsultDetail({ consult, doctor, onClose, onRefresh }: {
 }
 
 function ConsultationsContent() {
-  const { wallet, fheLoading }    = useWallet();
+  const { wallet, fheLoading, getPatientWallet, hasPatientSeed } = useWallet();
   const { openConnectModal }      = useConnectModal();
   const { isConnected }           = useAccount();
   const [mounted, setMounted]     = useState(false);
   const [consultations, setConsultations] = useState<ConsultationMeta[]>([]);
   const [doctors, setDoctors]     = useState<Map<number, Doctor>>(new Map());
   const [loadingData, setLoadingData] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [selected, setSelected]   = useState<ConsultationMeta | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Consultations live on the per-doctor patient wallets, so loading them needs the seed signature.
   const loadAll = useCallback(async () => {
     const contract = wallet.contract;
     if (!contract || !wallet.account) return;
     setLoadingData(true);
+    setLoadError("");
     try {
-      const ids = await contract.getPatientConsultations(wallet.account) as bigint[];
+      const docIds = (await contract.getAllDoctorIds() as bigint[]).map(Number);
+      const docMap = new Map<number, Doctor>();
+      const ids: bigint[] = [];
+      for (const docId of docIds) {
+        const d = await contract.doctors(docId);
+        docMap.set(docId, {
+          id: Number(d.id), wallet: d.wallet as string, name: d.name as string,
+          specialty: d.specialty as string, credentials: d.credentials as string,
+          active: d.active as boolean, consultationCount: Number(d.consultationCount),
+        });
+        const patientWallet = await getPatientWallet(docId);
+        ids.push(...(await contract.getPatientConsultations(patientWallet.address) as bigint[]));
+      }
       const loaded: ConsultationMeta[] = await Promise.all(
         ids.map(async (id) => {
           const m = await contract.getConsultationMeta(id);
@@ -198,26 +282,19 @@ function ConsultationsContent() {
           };
         })
       );
-      setConsultations(loaded.reverse());
-
-      const docMap = new Map<number, Doctor>();
-      const docIds = [...new Set(loaded.map((c) => c.doctorId))];
-      for (const docId of docIds) {
-        const d = await contract.doctors(docId);
-        docMap.set(docId, {
-          id: Number(d.id), wallet: d.wallet as string, name: d.name as string,
-          specialty: d.specialty as string, credentials: d.credentials as string,
-          active: d.active as boolean, consultationCount: Number(d.consultationCount),
-        });
-      }
+      setConsultations(loaded.sort((a, b) => b.id - a.id));
       setDoctors(docMap);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setLoadError(getErrorMessage(e));
+    }
     finally { setLoadingData(false); }
-  }, [wallet.contract, wallet.account]);
+  }, [wallet.contract, wallet.account, getPatientWallet]);
 
+  // Load automatically once the seed is unlocked (e.g. after submitting from the doctors page).
   useEffect(() => {
-    if (wallet.contract && wallet.account) loadAll();
-  }, [wallet.contract, wallet.account, loadAll]);
+    if (wallet.contract && wallet.account && hasPatientSeed) loadAll();
+  }, [wallet.contract, wallet.account, hasPatientSeed, loadAll]);
 
   if (!mounted) return null;
 
@@ -232,6 +309,18 @@ function ConsultationsContent() {
     </main>
   );
 
+  if (!hasPatientSeed) return (
+    <main className="page-sm" style={{ textAlign: "center", paddingTop: "4rem" }}>
+      <div style={{ fontSize: "2.5rem", marginBottom: "1rem" }}>🔑</div>
+      <h1 className="page-title">My Consultations</h1>
+      <p className="page-sub">Your consultations are held by private wallets, one per doctor, derived from a signature by your main wallet. Nothing is stored; sign to unlock them for this session.</p>
+      <button className="btn btn-primary" onClick={loadAll} disabled={loadingData || !wallet.contract}>
+        {loadingData ? "Unlocking..." : "Unlock My Consultations"}
+      </button>
+      {loadError && <div className="status-msg status-msg--error" style={{ marginTop: "1rem" }}>❌ {loadError}</div>}
+    </main>
+  );
+
   const open      = consultations.filter((c) => c.status === 0);
   const responded = consultations.filter((c) => c.status === 1);
   const closed    = consultations.filter((c) => c.status === 2);
@@ -241,7 +330,7 @@ function ConsultationsContent() {
       <div className="section-header">
         <div>
           <h1 className="page-title">My Consultations</h1>
-          <p className="page-sub">All complaints are encrypted on-chain. Only you and your assigned doctor can decrypt.</p>
+          <p className="page-sub">All complaints are encrypted on-chain. Only you, and a doctor you have delegated access to, can decrypt.</p>
         </div>
         <a href="/doctors" className="btn btn-primary btn-sm">+ New Consultation</a>
       </div>

@@ -1,3 +1,4 @@
+// ConfidentialCareV3
 const ABI = [
   // Admin
   "function admin() view returns (address)",
@@ -12,11 +13,10 @@ const ABI = [
   "function doctorIdByAddress(address) view returns (uint256)",
   "function isDoctor(address) view returns (bool)",
 
-  // Patient actions
+  // Patient actions (sent from the per-doctor patient wallet)
   "function submitConsultation(uint256 doctorId, bytes32[32] encryptedChunks, bytes inputProof, uint8 chunkCount)",
-  "function grantDoctorAccess(uint256 consultId)",
-  "function revokeDoctorAccess(uint256 consultId)",
   "function closeConsultation(uint256 consultId)",
+  "function patientDoctor(address) view returns (uint256)",
 
   // Doctor actions
   "function submitResponse(uint256 consultId, bytes32[32] encryptedChunks, bytes inputProof, uint8 chunkCount)",
@@ -28,13 +28,12 @@ const ABI = [
   "function getDoctorConsultations(uint256 doctorId) view returns (uint256[])",
   "function getComplaintHandles(uint256 consultId) view returns (bytes32[] handles, uint8 count)",
   "function getResponseHandles(uint256 consultId) view returns (bytes32[] handles, uint8 count)",
+  "function isDoctorDelegated(uint256 consultId) view returns (bool)",
 
   // Events
   "event DoctorAdded(uint256 indexed doctorId, address indexed wallet, string name, string specialty)",
   "event DoctorDeactivated(uint256 indexed doctorId)",
   "event ConsultationCreated(uint256 indexed consultationId, address indexed patient, uint256 indexed doctorId, uint256 createdAt)",
-  "event DoctorAccessGranted(uint256 indexed consultationId, uint256 indexed doctorId)",
-  "event DoctorAccessRevoked(uint256 indexed consultationId, uint256 indexed doctorId)",
   "event ResponseSubmitted(uint256 indexed consultationId, uint256 indexed doctorId)",
   "event ConsultationClosed(uint256 indexed consultationId)",
 ];

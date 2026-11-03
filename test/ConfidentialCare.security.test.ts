@@ -9,8 +9,8 @@ const MAX_CHUNKS = 32;
 // Zama's InputVerifier reverts with its own custom errors; load its ABI so the matcher can decode them.
 const inputVerifier = new ethers.Contract(
   ethers.ZeroAddress,
-  JSON.parse(fs.readFileSync(path.join(__dirname, "..", "node_modules", "@fhevm", "host-contracts", "artifacts",
-    "contracts", "InputVerifier.sol", "InputVerifier.json"), "utf8")).abi,
+  JSON.parse(fs.readFileSync(path.join(__dirname, "..", "node_modules", "@fhevm", "host-contracts-cleartext", "abi",
+    "CleartextInputVerifier.json"), "utf8")),
 );
 
 function textToChunks(text: string): bigint[] {

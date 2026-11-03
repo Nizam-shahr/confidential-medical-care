@@ -12,37 +12,37 @@ const steps = [
     num: "02", icon: "✍️", title: "Write Symptoms",
     color: "var(--accent2)",
     desc: "Patient types their complaint. Before it leaves the browser, it is encrypted using Zama's Fully Homomorphic Encryption.",
-    detail: "Text is encoded to bytes, split into 8-byte chunks, and each chunk is encrypted as euint64 using the Zama Relayer SDK. The plaintext never touches the blockchain.",
+    detail: "Text is encoded to bytes, split into 8-byte chunks, and each chunk is encrypted as euint64 with the Zama SDK, together with a proof that binds the ciphertext to your wallet and this contract. The plaintext never touches the blockchain.",
   },
   {
     num: "03", icon: "⛓️", title: "Submit On-Chain",
     color: "var(--accent)",
-    desc: "The encrypted chunks are submitted to the ConfidentialCare smart contract on Ethereum Sepolia.",
-    detail: "The smart contract stores FHE ciphertext handles — pointers to encrypted values managed by Zama's coprocessor network. Gas costs are similar to a normal transaction.",
+    desc: "The encrypted chunks are submitted from a private wallet used only for this doctor, derived from one signature by your main wallet.",
+    detail: "The contract stores FHE ciphertext handles and lets a patient wallet consult only one doctor, so access you give one doctor never covers another. Your main wallet pays this private wallet's gas, and that transfer is public.",
   },
   {
-    num: "04", icon: "🔑", title: "Grant Access",
+    num: "04", icon: "🔑", title: "Delegate Access",
     color: "var(--accent2)",
-    desc: "Patient explicitly grants the chosen doctor ACL permission to decrypt the complaint. This is the core FHE access control feature.",
-    detail: "FHE.allow(chunk, doctorWallet) is called for each encrypted chunk. Only the granted doctor's wallet can now trigger decryption via the Zama KMS. The patient is always in control.",
+    desc: "Your private wallet delegates decryption to the doctor for 14 days. You can revoke it at any time, and closing the consultation revokes it.",
+    detail: "The delegation is recorded on Zama's ACL for this contract only. The doctor holds no ACL permission of their own, so they cannot pass access on or make your data public. It covers all your consultations with that doctor, and anything the doctor has already read cannot be taken back.",
   },
   {
     num: "05", icon: "🩺", title: "Doctor Decrypts",
     color: "#f472b6",
-    desc: "Doctor opens their inbox, clicks decrypt. The Zama Relayer performs user-specific re-encryption so only the doctor can read it.",
-    detail: "The Relayer SDK's reencrypt() function uses the doctor's public key to re-encrypt the ciphertext. The doctor's browser decrypts locally. The plaintext never appears on-chain.",
+    desc: "Doctor opens their inbox and decrypts on your behalf while the delegation is active.",
+    detail: "Zama's key-management nodes check the delegation and return the value re-encrypted to a temporary key held in the doctor's browser, which decrypts it locally. The plaintext never appears on-chain.",
   },
   {
     num: "06", icon: "💊", title: "Encrypted Response",
     color: "var(--accent2)",
-    desc: "Doctor writes their advice. It is FHE-encrypted for the patient's eyes only — not even the doctor can re-read it after submission.",
-    detail: "The response is encrypted with ACL permission granted only to the patient's wallet. The doctor submitting the response doesn't get ACL on their own response — this is response-blind design.",
+    desc: "Doctor writes their advice. It is FHE-encrypted and ACL permission goes to your private wallet only; no other doctor can read it.",
+    detail: "The doctor gets no ACL permission on the response. While your delegation to them is active they can still decrypt their own reply through it, as it covers everything your private wallet can decrypt in this contract.",
   },
   {
     num: "07", icon: "🔓", title: "Patient Reads",
     color: "var(--accent)",
     desc: "Patient decrypts the doctor's response in their browser. The consultation is complete — identity never revealed.",
-    detail: "Only the patient's wallet can trigger re-encryption of the response. The decrypted text exists only in the patient's browser — never stored in plaintext anywhere.",
+    detail: "Your private wallet requests the decryption; the decrypted text exists only in your browser. Closing the consultation first revokes the doctor's delegation, then closes it — two transactions, one click.",
   },
 ];
 
@@ -66,13 +66,13 @@ function HowItWorksContent() {
           Regular encryption protects data at rest and in transit. FHE allows computation <em>directly on encrypted data</em> —
           so the blockchain processes your encrypted symptoms without ever decrypting them.
           This is fundamentally different from any other privacy technology.
-          Neither Zama, nor the blockchain nodes, nor the contract owner can see your data.
+          The blockchain nodes and the contract owner cannot see your data; decryption needs a threshold of Zama's independent key-management nodes to cooperate.
         </div>
       </div>
 
       {/* Steps */}
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "3rem" }}>
-        {steps.map((s, i) => (
+        {steps.map((s) => (
           <div key={s.num} className="card card--flat" style={{ display: "flex", gap: "1.25rem", alignItems: "flex-start" }}>
             <div style={{
               width: 52, height: 52, borderRadius: 12, flexShrink: 0,
@@ -98,12 +98,12 @@ function HowItWorksContent() {
         <h2 className="section-title" style={{ marginBottom: "1rem" }}>Privacy Guarantees</h2>
         <div className="grid-2">
           {[
-            { icon: "🕵️", title: "No Identity", desc: "Only your wallet address is stored. No name, no email, no personal data anywhere on-chain." },
+            { icon: "🕵️", title: "No Identity", desc: "Only wallet addresses are stored. No name, no email. Your main wallet's gas top-up to each private wallet is public, so the wallets can be linked to each other." },
             { icon: "🔒", title: "Encrypted at Rest", desc: "Symptoms and responses are stored as FHE ciphertexts. Even if the blockchain is public, your data is safe." },
-            { icon: "🎯", title: "ACL-Controlled", desc: "You explicitly choose who can decrypt. Revocable at any time. One doctor per consultation." },
-            { icon: "🚫", title: "Response-Blind", desc: "After submitting a response, the doctor cannot re-read it. Only the patient can decrypt doctor responses." },
-            { icon: "⛓️", title: "On-Chain Verifiable", desc: "All permissions and access grants are on-chain. Auditable without seeing the underlying data." },
-            { icon: "🌐", title: "No Central Server", desc: "No backend, no database, no admin seeing queries. The contract is the only intermediary." },
+            { icon: "🎯", title: "Revocable Access", desc: "A doctor reads only while your delegation is active: 14 days by default, ended by revoking or closing. Doctors cannot pass access on." },
+            { icon: "🚫", title: "Doctor Isolation", desc: "Each doctor's consultations sit in a separate private wallet, so one doctor never gains access to what you sent another." },
+            { icon: "⛓️", title: "On-Chain Verifiable", desc: "All permissions, delegations and revocations are on-chain. Auditable without seeing the underlying data, but their timing is public." },
+            { icon: "🌐", title: "No App Server", desc: "No ConfidentialCare backend or database. Encryption proofs and decryption go through Zama's relayer, which never sees plaintext." },
           ].map((g) => (
             <div key={g.title} className="card card--flat">
               <div style={{ fontSize: "1.5rem", marginBottom: ".5rem" }}>{g.icon}</div>

@@ -19,12 +19,12 @@ const STEPS = [
   {
     num: "03", icon: "🔑", color: "var(--accent4)",
     title: "You Control Who Reads It",
-    desc: "You decide when to unlock your message for the doctor. You can revoke access any time. Your data, your rules.",
+    desc: "The doctor can read your message for 14 days. Access ends sooner if you revoke it or close the consultation, though a doctor may remember what they already read.",
   },
   {
     num: "04", icon: "💊", color: "var(--accent3)",
     title: "Get Private Advice",
-    desc: "The doctor replies — also encrypted, just for your eyes. Your name, face, and identity are never part of the picture.",
+    desc: "The doctor replies — also encrypted. No other doctor can read it; the replying doctor can re-read their own reply only while your access is active. Your name, face, and identity are never part of the picture.",
   },
 ];
 
@@ -42,7 +42,7 @@ const FEATURES = [
   {
     icon: "🎛️", color: "pink",
     title: "You hold the keys",
-    desc: "A doctor can only read your complaint after you grant permission. You control access — and can revoke it instantly.",
+    desc: "A doctor can only read your complaint after you grant permission, cannot pass it on, and loses access when you revoke it, close the consultation, or it expires.",
   },
   {
     icon: "⛓️", color: "purple",

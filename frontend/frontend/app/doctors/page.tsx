@@ -8,6 +8,8 @@ import { ethers } from "ethers";
 import type { Doctor } from "@/libs/types";
 import { encryptText } from "@/libs/fhe-utils";
 import { getErrorMessage } from "@/libs/errors";
+import { CONTRACT_ADDRESS, DELEGATION_DAYS, PATIENT_WALLET_TOPUP_ETH } from "@/libs/config";
+import { fundIfNeeded, GAS_BUDGET } from "@/libs/patient-wallets";
 
 function DoctorCard({ doc, onSelect }: { doc: Doctor; onSelect: () => void }) {
   const initials = doc.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -35,7 +37,7 @@ function DoctorCard({ doc, onSelect }: { doc: Doctor; onSelect: () => void }) {
 type Step = "write" | "encrypting" | "submitting" | "granting" | "done";
 
 function ConsultModal({ doctor, onClose, onDone }: { doctor: Doctor; onClose: () => void; onDone: () => void }) {
-  const { wallet } = useWallet();
+  const { wallet, provider, getPatientWallet, getPatientSdk } = useWallet();
   const [text, setText]                         = useState("");
   const [step, setStep]                         = useState<Step>("write");
   const [status, setStatus]                     = useState("");
@@ -47,21 +49,32 @@ function ConsultModal({ doctor, onClose, onDone }: { doctor: Doctor; onClose: ()
 
   const handleSubmit = async () => {
     if (!text.trim()) { setStatus("Please describe your symptoms."); return; }
-    if (!wallet.fhevmInstance) { setStatus("FHE not ready. Please reconnect."); return; }
     const contract = wallet.contract;
-    if (!contract) { setStatus("Wallet not connected."); return; }
+    if (!contract || !provider) { setStatus("Wallet not connected."); return; }
 
     try {
       setStep("encrypting");
+      // Each doctor gets its own patient wallet, so a delegation to this doctor can never cover
+      // consultations with another doctor (the contract enforces one doctor per patient address).
+      setStatus("✍️ Sign once to unlock your private patient wallet for this doctor...");
+      const patientWallet = await getPatientWallet(doctor.id);
+      const bound = Number(await contract.patientDoctor(patientWallet.address));
+      if (bound !== 0 && bound !== doctor.id) throw new Error("This patient wallet is already bound to another doctor.");
+
+      setStatus("⛽ Funding your private wallet from your main wallet (this transfer is public)...");
+      await fundIfNeeded(patientWallet, await provider.getSigner(), GAS_BUDGET.submitAndDelegate, ethers.parseEther(PATIENT_WALLET_TOPUP_ETH));
+
       setStatus("🔐 Encrypting your symptoms with FHE...");
       const contractAddress = await contract.getAddress();
+      const patientSdk = await getPatientSdk(doctor.id);
       const { handles, inputProof, chunkCount } = await encryptText(
-        text, contractAddress, wallet.account, wallet.fhevmInstance
+        text, contractAddress, patientWallet.address, patientSdk
       );
 
       setStep("submitting");
       setStatus("📡 Submitting encrypted consultation on-chain...");
-      const tx: ethers.ContractTransactionResponse = await contract.submitConsultation(
+      const asPatient = contract.connect(patientWallet) as ethers.Contract;
+      const tx: ethers.ContractTransactionResponse = await asPatient.submitConsultation(
         doctor.id, handles, inputProof, chunkCount
       );
       setStatus("⏳ Waiting for confirmation...");
@@ -82,10 +95,11 @@ function ConsultModal({ doctor, onClose, onDone }: { doctor: Doctor; onClose: ()
       }
 
       setStep("granting");
-      setStatus("🔑 Granting doctor access to decrypt your complaint...");
-      const grantTx: ethers.ContractTransactionResponse = await contract.grantDoctorAccess(cId);
-      setStatus("⏳ Confirming access grant...");
-      await grantTx.wait();
+      setStatus(`🔑 Delegating decryption to the doctor for ${DELEGATION_DAYS} days...`);
+      // The doctor gets a revocable, expiring delegation — never an ACL grant it could re-share.
+      // Scoped to this contract only (never the all-contracts wildcard) and sent from the wallet bound to this doctor.
+      const { delegateToDoctor } = await import("@/libs/zama");
+      await delegateToDoctor(patientSdk, CONTRACT_ADDRESS, doctor.wallet);
 
       setStep("done");
 
@@ -132,7 +146,7 @@ function ConsultModal({ doctor, onClose, onDone }: { doctor: Doctor; onClose: ()
 
         <div className="fhe-box">
           <span className="fhe-box-icon">⚡</span>
-          <p>Your symptoms will be <strong>FHE-encrypted in your browser</strong> before being sent to the blockchain. The doctor gets ACL permission to decrypt — nobody else can.</p>
+          <p>Your symptoms will be <strong>FHE-encrypted in your browser</strong> and sent from a private wallet used only for this doctor. The doctor can decrypt your consultations with them for {DELEGATION_DAYS} days, until you revoke access or close the consultation; the doctor cannot pass that access on, but can keep what they have already read. Your main wallet funds that private wallet, and that transfer is visible on-chain.</p>
         </div>
 
         {step === "write" && (
@@ -172,8 +186,8 @@ function ConsultModal({ doctor, onClose, onDone }: { doctor: Doctor; onClose: ()
                 {step === "encrypting"
                   ? "Your symptoms are being locked with FHE encryption in your browser."
                   : step === "submitting"
-                  ? "Sending your encrypted consultation to Ethereum. Please confirm in your wallet."
-                  : "Granting the doctor permission to decrypt. Please confirm in your wallet."}
+                  ? "Sending your encrypted consultation from your private patient wallet."
+                  : "Delegating decryption to the doctor from your private patient wallet."}
               </div>
               <div className="tx-overlay-steps">
                 {(["encrypting", "submitting", "granting"] as const).map((k, i) => {

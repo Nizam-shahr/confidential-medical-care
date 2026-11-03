@@ -87,7 +87,7 @@ export async function connectAndInitialize(): Promise<{
   return {
     state: {
       account, contract,
-      fhevmInstance: null, fhevmReady: false,
+      zama: null, fhevmReady: false,
       walletName, isAdmin, isDoctorId,
     },
     provider,

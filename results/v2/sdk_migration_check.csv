@@ -1,0 +1,6 @@
+test_id,wallet_role,action,expected,recorded_actual,new_actual,match,new_detail,recorded_detail
+A1,assigned doctor 1 0xBebD…B9Eb,userDecrypt complaint,DECRYPT,DECRYPT,DECRYPT,true,decrypted OK (6 chunks),decrypted OK (46 chars)
+A2,other doctor 2 0x25c6…612C,userDecrypt complaint,REFUSED,REFUSED,REFUSED,true,NotEntitledError: User 0x25c6…612C is not authorized to decrypt handle 0x6e27…b3d5a3000000000000aa36a70500!,User address 0x25c6…612C is not authorized to user decrypt handle 0x6e277577…0500!
+A4,random wallet 0x38A0…fCe0,userDecrypt complaint,REFUSED,REFUSED,REFUSED,true,NotEntitledError: User 0x38A0…fCe0 is not authorized to decrypt handle 0x6e27…b3d5a3000000000000aa36a70500!,User address 0x1362…201F is not authorized to user decrypt handle 0x6e277577…0500!
+B30,doctor 1 0xBebD…B9Eb as patient,"submitConsultation(2, reused handles of #1, 0x)",REVERT,REVERT,REVERT,true,Input proof required,Input proof required
+B30b,doctor 1 0xBebD…B9Eb as patient,"submitConsultation(2, reused handles of #1, fresh valid proof)",REVERT,(not recorded),REVERT,n/a (new test),InputVerifier.InvalidInputHandle · control (own handles + own proof) SUCCEEDS,

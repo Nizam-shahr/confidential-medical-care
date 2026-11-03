@@ -2,17 +2,19 @@
 
 import {
   useState, createContext, useContext,
-  ReactNode, useEffect,
+  ReactNode, useEffect, useRef, useCallback, useMemo,
 } from "react";
 import { RainbowKitProvider, darkTheme, getDefaultConfig } from "@rainbow-me/rainbowkit";
-import type { WalletState, EIP1193Provider, FhevmInstance } from "@/libs/types";
+import type { WalletState } from "@/libs/types";
+import type { ZamaSdk } from "@/libs/zama";
 import { WagmiProvider, useWalletClient, useAccount, type Config } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cookieToInitialState } from "wagmi";
 import { ethers, type BrowserProvider } from "ethers";
-import { CONTRACT_ADDRESS } from "@/libs/config";
+import { CONTRACT_ADDRESS, SEPOLIA_RPC_URL } from "@/libs/config";
 import ABI from "@/libs/abi";
+import { deriveDoctorWallet, signPatientSeed } from "@/libs/patient-wallets";
 import "@rainbow-me/rainbowkit/styles.css";
 
 // ── Wagmi / RainbowKit config ─────────────────────────────────────────────────
@@ -25,26 +27,11 @@ const wagmiConfig = getDefaultConfig({
 
 const queryClient = new QueryClient();
 
-// ── Window type helpers ───────────────────────────────────────────────────────
-// Defined at module level so TypeScript sees them everywhere
-type WindowWithWallets = Window & {
-  okxwallet?: EIP1193Provider;
-  ethereum?: EIP1193Provider;
-};
-
-// Index signature is required for string-key access (w[k], w[key])
-type WindowWithSDK = Window & {
-  fhevm?: unknown;
-  FheRelayerSdk?: unknown;
-  relayerSdk?: unknown;
-  [key: string]: unknown;
-};
-
 // ── Wallet context ────────────────────────────────────────────────────────────
 const EMPTY: WalletState = {
   account: "",
   contract: null,
-  fhevmInstance: null,
+  zama: null,
   fhevmReady: false,
   walletName: "",
   isAdmin: false,
@@ -56,6 +43,11 @@ interface WalletCtx {
   provider: BrowserProvider | null;
   fheLoading: boolean;
   fheError: string;
+  /** Per-doctor patient wallet, derived from one signature by the main wallet (prompts once per session). */
+  getPatientWallet: (doctorId: number) => Promise<ethers.Wallet>;
+  /** Zama SDK bound to the per-doctor patient wallet (encrypts, decrypts, delegates and revokes as that wallet). */
+  getPatientSdk: (doctorId: number) => Promise<ZamaSdk>;
+  hasPatientSeed: boolean;
 }
 
 const WalletCtxDef = createContext<WalletCtx>({
@@ -63,6 +55,9 @@ const WalletCtxDef = createContext<WalletCtx>({
   provider: null,
   fheLoading: false,
   fheError: "",
+  getPatientWallet: async () => { throw new Error("Wallet not connected"); },
+  getPatientSdk: async () => { throw new Error("Wallet not connected"); },
+  hasPatientSeed: false,
 });
 
 export function useWallet() { return useContext(WalletCtxDef); }
@@ -76,6 +71,49 @@ function FheProvider({ children }: { children: ReactNode }) {
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [fheLoading, setFheLoading] = useState(false);
   const [fheError, setFheError] = useState("");
+
+  // Seed signature for the per-doctor patient wallets: memory only, dropped on account change.
+  const seedRef = useRef<string | null>(null);
+  const [hasPatientSeed, setHasPatientSeed] = useState(false);
+  const rpcProvider = useMemo(() => new ethers.JsonRpcProvider(SEPOLIA_RPC_URL), []);
+
+  // One SDK per derived patient wallet, created on first use.
+  const patientSdks = useRef(new Map<string, ZamaSdk>());
+
+  // Main-wallet SDK; replaced whenever the connected account changes.
+  const mainSdk = useRef<ZamaSdk | null>(null);
+
+  useEffect(() => {
+    seedRef.current = null;
+    setHasPatientSeed(false);
+    for (const sdk of patientSdks.current.values()) sdk.terminate();
+    patientSdks.current.clear();
+    mainSdk.current?.terminate();
+    mainSdk.current = null;
+    setWallet(prev => ({ ...prev, zama: null, fhevmReady: false }));
+  }, [address]);
+
+  const getPatientWallet = useCallback(async (doctorId: number) => {
+    if (!provider) throw new Error("Wallet not connected");
+    if (!seedRef.current) {
+      const signer = await provider.getSigner();
+      // Signs twice once per session to make sure the wallet's signatures are reproducible.
+      seedRef.current = await signPatientSeed(signer, CONTRACT_ADDRESS, 11155111, true);
+      setHasPatientSeed(true);
+    }
+    return deriveDoctorWallet(seedRef.current, doctorId, rpcProvider);
+  }, [provider, rpcProvider]);
+
+  const getPatientSdk = useCallback(async (doctorId: number) => {
+    const patientWallet = await getPatientWallet(doctorId);
+    let sdk = patientSdks.current.get(patientWallet.address);
+    if (!sdk) {
+      const { createZamaSdk } = await import("@/libs/zama");
+      sdk = createZamaSdk(patientWallet);
+      patientSdks.current.set(patientWallet.address, sdk);
+    }
+    return sdk;
+  }, [getPatientWallet]);
 
   // Build ethers contract + detect roles when wallet connects
   useEffect(() => {
@@ -121,32 +159,21 @@ function FheProvider({ children }: { children: ReactNode }) {
     setup();
   }, [address, isConnected, walletClient]);
 
-  // Init FHE when wallet connects — SDK loaded from CDN script in layout.tsx
+  // Create the Zama SDK for the main wallet once it is connected (WASM loads on first use).
   useEffect(() => {
-    if (!wallet.account || wallet.fhevmReady || fheLoading) return;
+    if (!wallet.account || !provider || wallet.fhevmReady || fheLoading) return;
 
     const initFhe = async () => {
-      const win = window as WindowWithWallets;
-      const walletProvider: EIP1193Provider | undefined = win.okxwallet ?? win.ethereum;
-      if (!walletProvider) return;
-
       try {
         setFheLoading(true);
         setFheError("");
-
-        // Poll window until CDN script exposes the SDK as a global
-        const sdk = await findSdkOnWindow();
-
-        console.log("[FHE] SDK found:", Object.keys(sdk).slice(0, 6));
-        if (typeof sdk.initSDK === "function") {
-          await sdk.initSDK();
-        }
-        const instance = await sdk.createInstance({
-          ...sdk.SepoliaConfig,
-          network: walletProvider,
-        });
-
-        setWallet(prev => ({ ...prev, fhevmInstance: instance as FhevmInstance, fhevmReady: true }));
+        const { createZamaSdk } = await import("@/libs/zama");
+        const signer = await provider.getSigner();
+        // The provider may still belong to the previous account during a switch; wait for the new one.
+        if (signer.address.toLowerCase() !== wallet.account.toLowerCase()) return;
+        const sdk = createZamaSdk(signer);
+        mainSdk.current = sdk;
+        setWallet(prev => ({ ...prev, zama: sdk, fhevmReady: true }));
       } catch (e: unknown) {
         console.warn("FHE init failed:", e);
         setFheError(
@@ -158,10 +185,10 @@ function FheProvider({ children }: { children: ReactNode }) {
     };
 
     initFhe();
-  }, [wallet.account, wallet.fhevmReady, fheLoading]);
+  }, [wallet.account, wallet.fhevmReady, provider, fheLoading]);
 
   return (
-    <WalletCtxDef.Provider value={{ wallet, provider, fheLoading, fheError }}>
+    <WalletCtxDef.Provider value={{ wallet, provider, fheLoading, fheError, getPatientWallet, getPatientSdk, hasPatientSeed }}>
       {/* FHE init overlay */}
       {fheLoading && (
         <div className="tx-overlay">
@@ -210,55 +237,6 @@ function FheProvider({ children }: { children: ReactNode }) {
       {children}
     </WalletCtxDef.Provider>
   );
-}
-
-// ── Find Zama SDK on window ───────────────────────────────────────────────────
-// Extracted as a named function to keep useEffect clean and avoid inline any.
-// The SDK is loaded via <script> CDN tag in layout.tsx — we poll until it appears.
-type ZamaSdk = {
-  initSDK?: () => Promise<void>;
-  createInstance: (config: Record<string, unknown>) => Promise<unknown>;
-  SepoliaConfig: Record<string, unknown>;
-  [key: string]: unknown;
-};
-
-function isSdk(value: unknown): value is ZamaSdk {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "createInstance" in value &&
-    "SepoliaConfig" in value
-  );
-}
-
-function findSdkOnWindow(): Promise<ZamaSdk> {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 10000;
-
-    const poll = () => {
-      // WindowWithSDK has [key: string]: unknown so w[k] is typed correctly
-      const w = window as unknown as WindowWithSDK;
-
-      // Try known global names first
-      const direct = w.fhevm ?? w.FheRelayerSdk ?? w.relayerSdk;
-      if (isSdk(direct)) { resolve(direct); return; }
-
-      // Scan all window keys as fallback
-      const foundKey = Object.keys(w).find((k) => isSdk(w[k]));
-      if (foundKey) {
-        resolve(w[foundKey] as ZamaSdk);
-        return;
-      }
-
-      if (Date.now() > deadline) {
-        reject(new Error("FHE SDK not found on window after 10s"));
-        return;
-      }
-      setTimeout(poll, 300);
-    };
-
-    poll();
-  });
 }
 
 // ── Wallet name detection ─────────────────────────────────────────────────────

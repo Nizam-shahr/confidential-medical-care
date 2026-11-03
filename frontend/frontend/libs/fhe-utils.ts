@@ -1,5 +1,4 @@
-import { ethers } from "ethers";
-import type { FhevmInstance } from "./types";
+import type { ZamaSdk } from "./zama";
 import { MAX_CHUNKS } from "./config";
 
 // ── Text encoding ─────────────────────────────────────────────────────────────
@@ -46,103 +45,66 @@ export function buildHandlesArray(handles: string[]): string[] {
   return result;
 }
 
-// ── Uint8Array → 0x hex ───────────────────────────────────────────────────────
-function toHex(value: Uint8Array | string): string {
-  if (typeof value === "string") {
-    return value.startsWith("0x") ? value : "0x" + value;
-  }
-  return "0x" + Array.from(value)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 // ── Encrypt text ──────────────────────────────────────────────────────────────
+// The input proof is bound to `userAddress` and `contractAddress`.
 export async function encryptText(
   text: string,
   contractAddress: string,
   userAddress: string,
-  fhevmInstance: FhevmInstance
+  sdk: ZamaSdk
 ): Promise<{ handles: string[]; inputProof: string; chunkCount: number }> {
   const chunks = textToUint64Chunks(text);
-  const chunkCount = chunks.length;
-
-  const inputBuilder = fhevmInstance.createEncryptedInput(contractAddress, userAddress);
-  for (const chunk of chunks) {
-    inputBuilder.add64(chunk);
-  }
-  const encrypted = await inputBuilder.encrypt();
-
-  const handles = buildHandlesArray(
-    encrypted.handles.slice(0, chunkCount).map((h) => toHex(h))
-  );
-
+  const { encryptedValues, inputProof } = await sdk.encrypt({
+    values: chunks.map((value) => ({ value, type: "euint64" as const })),
+    contractAddress: contractAddress as `0x${string}`,
+    userAddress: userAddress as `0x${string}`,
+  });
   return {
-    handles,
-    inputProof: toHex(encrypted.inputProof),
-    chunkCount,
+    handles: buildHandlesArray(encryptedValues.slice(0, chunks.length).map(String)),
+    inputProof: String(inputProof),
+    chunkCount: chunks.length,
   };
 }
 
+function validOnly(handles: string[]): string[] {
+  return handles.filter((h) => h && h !== "0x" + "0".repeat(64));
+}
+
 // ── Decrypt handles ───────────────────────────────────────────────────────────
-export async function decryptHandles(
+// `sdk` must be bound to whoever holds the ACL permission: the patient's per-doctor
+// wallet for its own complaint and responses.
+export async function decryptHandles(handles: string[], contractAddress: string, sdk: ZamaSdk): Promise<string> {
+  const valid = validOnly(handles);
+  if (valid.length === 0) return "";
+  const result = await sdk.decryption.decryptValues(
+    valid.map((h) => ({ encryptedValue: h as `0x${string}`, contractAddress: contractAddress as `0x${string}` }))
+  );
+  return resultToText(valid, result);
+}
+
+// ── Decrypt handles as a delegate (doctor) ────────────────────────────────────
+// v3: the doctor holds no ACL permission of its own. It decrypts on behalf of the
+// patient wallet (`delegator`) that delegated to it on the Zama ACL.
+export async function decryptHandlesDelegated(
   handles: string[],
   contractAddress: string,
-  userAddress: string,
-  fhevmInstance: FhevmInstance,
-  provider: ethers.BrowserProvider
+  delegator: string,
+  doctorSdk: ZamaSdk
 ): Promise<string> {
-  const signer = await provider.getSigner();
-
-  const validHandles = handles.filter(
-    (h) => h && h !== "0x" + "0".repeat(64)
+  const valid = validOnly(handles);
+  if (valid.length === 0) return "";
+  const result = await doctorSdk.decryption.delegatedDecryptValues(
+    valid.map((h) => ({ encryptedValue: h as `0x${string}`, contractAddress: contractAddress as `0x${string}` })),
+    delegator as `0x${string}`
   );
-  if (validHandles.length === 0) return "";
+  return resultToText(valid, result);
+}
 
-  // Step 1 — keypair
-  const keypair = fhevmInstance.generateKeypair();
-
-  // Step 2 — handle-contract pairs
-  const handleContractPairs = validHandles.map((handle) => ({
-    handle,
-    contractAddress,
-  }));
-
-  // Step 3 — EIP-712 signature
-  const startTimeStamp = Math.floor(Date.now() / 1000);
-  const durationDays = 10;
-  const contractAddresses = [contractAddress];
-
-  const eip712 = fhevmInstance.createEIP712(
-    keypair.publicKey,
-    contractAddresses,
-    startTimeStamp,
-    durationDays
-  );
-
-  const signature = await signer.signTypedData(
-    eip712.domain as ethers.TypedDataDomain,
-    { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification as ethers.TypedDataField[] },
-    eip712.message
-  );
-
-  // Step 4 — userDecrypt
-  const result = await fhevmInstance.userDecrypt(
-    handleContractPairs,
-    keypair.privateKey,
-    keypair.publicKey,
-    signature.replace("0x", ""),
-    contractAddresses,
-    signer.address,
-    startTimeStamp,
-    durationDays
-  );
-
-  // Step 5 — reconstruct text
+function resultToText(validHandles: string[], result: Record<string, unknown>): string {
   const decryptedChunks = validHandles.map((handle) => {
-    const val = result[handle];
+    const val = result[handle] ?? result[handle.toLowerCase()];
     if (val === undefined || val === null) return BigInt(0);
     return BigInt(val as string | number | bigint);
   });
-
   return uint64ChunksToText(decryptedChunks);
 }

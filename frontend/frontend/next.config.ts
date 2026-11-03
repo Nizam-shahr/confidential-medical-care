@@ -9,10 +9,6 @@ const nextConfig: NextConfig = {
       "@react-native-async-storage/async-storage": path.resolve(
         "./libs/empty-module.js"
       ),
-      // FHE SDK loaded via CDN in layout.tsx — stub npm package to prevent errors
-      "@zama-fhe/relayer-sdk":        path.resolve("./libs/empty-module.js"),
-      "@zama-fhe/relayer-sdk/bundle": path.resolve("./libs/empty-module.js"),
-      "@zama-fhe/relayer-sdk/web":    path.resolve("./libs/empty-module.js"),
     };
 
     config.externals.push("pino-pretty", "lokijs", "encoding");

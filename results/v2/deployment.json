@@ -1,0 +1,11 @@
+{
+  "address": "0x708de98F102B3E99071b92c851dB1C832e197D59",
+  "block": 12047093,
+  "txHash": "0x2f5dba04e33aa3ee733e2d5fda883a84ed93291ad2cfcf22cb65c36a957a5baf",
+  "deployer": "0xe1E13AFe96d01C3a759B5679663b3781b9F1B349",
+  "deployedAt": "2026-11-02T08:53:25.397Z",
+  "commit": "f3bbdcd47ec8135aa4082fb0341d00c630e3a6ff",
+  "workingTreeDirty": true,
+  "sourceSha256": "dcd4827238bdbef8154d91f78752a6a21f15bd90fb569e5e3332e5d3197451c7",
+  "verified": "https://sepolia.etherscan.io/address/0x708de98F102B3E99071b92c851dB1C832e197D59#code"
+}

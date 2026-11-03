@@ -21,9 +21,7 @@ const config: HardhatUserConfig = {
     deployer: 0,
   },
   etherscan: {
-    apiKey: {
-      sepolia: vars.get("ETHERSCAN_API_KEY"),
-    },
+    apiKey: vars.get("ETHERSCAN_API_KEY"),
   },
   gasReporter: {
     currency: "USD",
@@ -31,14 +29,8 @@ const config: HardhatUserConfig = {
     excludeContracts: [],
   },
   networks: {
-    // Local networks use a default test private key — fine for development
+    // In-process network uses Hardhat's built-in test accounts (tests need several signers)
     hardhat: {
-      accounts: [
-        {
-          privateKey: DEPLOYER_PRIVATE_KEY,
-          balance: "10000000000000000000000",
-        },
-      ],
       chainId: 31337,
     },
     anvil: {

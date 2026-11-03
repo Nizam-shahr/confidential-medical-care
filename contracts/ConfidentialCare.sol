@@ -11,7 +11,9 @@ import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
  *  PRIVACY MODEL:
  *  ══════════════
  *  - Patient symptoms are encrypted client-side into chunks of euint64.
- *  - Only the chosen doctor (via ACL) can decrypt the complaint.
+ *  - Only the chosen doctor (via ACL) can decrypt the complaint, after the patient
+ *    grants access. Grants are permanent and the doctor can re-share them via the
+ *    ACL directly (see grantDoctorAccess).
  *  - Doctor response is also encrypted — only the patient can decrypt it.
  *  - No one on-chain (including the contract owner) sees plaintext.
  *  - Patient identity is never stored — only their wallet address.
@@ -112,7 +114,8 @@ contract ConfidentialCare is ZamaEthereumConfig {
     );
 
     event DoctorAccessGranted(uint256 indexed consultationId, uint256 indexed doctorId);
-    event DoctorAccessRevoked(uint256 indexed consultationId, uint256 indexed doctorId);
+    /// @dev Signal only — does not remove ACL access (see markAccessWithdrawn).
+    event AccessWithdrawalMarked(uint256 indexed consultationId, uint256 indexed doctorId);
 
     event ResponseSubmitted(uint256 indexed consultationId, uint256 indexed doctorId);
     event ConsultationClosed(uint256 indexed consultationId);
@@ -230,6 +233,10 @@ contract ConfidentialCare is ZamaEthereumConfig {
         require(doctorId > 0 && doctorId <= doctorCount, "Doctor not found");
         require(doctors[doctorId].active, "Doctor not active");
         require(chunkCount > 0 && chunkCount <= MAX_CHUNKS, "Invalid chunk count");
+        // With an empty proof, FHE.fromExternal accepts any existing handle the caller is
+        // ACL-allowed on. A granted doctor could then resubmit a patient's ciphertexts and
+        // grant them to another doctor. Requiring a proof forces fresh inputs bound to msg.sender.
+        require(inputProof.length > 0, "Input proof required");
 
         consultationCount++;
         uint256 consultId = consultationCount;
@@ -261,13 +268,15 @@ contract ConfidentialCare is ZamaEthereumConfig {
     }
 
     // ─────────────────────────────────────────────
-    //  Patient: Grant / Revoke Doctor Access
+    //  Patient: Grant Doctor Access / Mark Access Withdrawn
     // ─────────────────────────────────────────────
 
     /**
      * @notice Grant the assigned doctor ACL access to decrypt the complaint.
      * @dev Patient must call this AFTER submitConsultation to unlock decryption.
-     *      This is the key FHE ACL feature — the patient controls who can decrypt.
+     *      The grant is PERMANENT: Zama ACL permissions cannot be removed. Because ACL.allow
+     *      only requires the caller to be allowed on the handle, the doctor can also call the
+     *      ACL directly to share the handles with any address or make them publicly decryptable.
      */
     function grantDoctorAccess(uint256 consultId)
         external
@@ -288,21 +297,17 @@ contract ConfidentialCare is ZamaEthereumConfig {
     }
 
     /**
-     * @notice Revoke the doctor's ACL access (e.g. if patient changes mind).
-     * @dev Note: revoking ACL does not delete already-decrypted data off-chain.
-     *      It prevents future decryption requests from being fulfilled.
+     * @notice Record that the patient has withdrawn consent for the assigned doctor.
+     * @dev This is a signal only. It changes no state and does NOT revoke decryption:
+     *      ACL grants made by grantDoctorAccess are permanent, so the doctor can still
+     *      decrypt the complaint after this call.
      */
-    function revokeDoctorAccess(uint256 consultId)
+    function markAccessWithdrawn(uint256 consultId)
         external
         consultExists(consultId)
         onlyPatient(consultId)
     {
-        Consultation storage c = consultations[consultId];
-
-        // Revoke by removing doctor from allowlist is not directly supported —
-        // we record intent via event; the frontend warns doctor access was revoked.
-        // The ACL itself is immutable once set, but this event signals intent.
-        emit DoctorAccessRevoked(consultId, c.doctorId);
+        emit AccessWithdrawalMarked(consultId, consultations[consultId].doctorId);
     }
 
     // ─────────────────────────────────────────────
@@ -334,6 +339,7 @@ contract ConfidentialCare is ZamaEthereumConfig {
         require(c.status == ConsultStatus.Open, "Consultation not open");
         require(!c.hasResponse, "Response already submitted");
         require(chunkCount > 0 && chunkCount <= MAX_CHUNKS, "Invalid chunk count");
+        require(inputProof.length > 0, "Input proof required"); // see submitConsultation
 
         c.responseChunkCount = chunkCount;
         c.hasResponse = true;

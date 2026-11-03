@@ -1,0 +1,683 @@
+[
+ {
+  "inputs": [],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "handle",
+    "type": "bytes32"
+   },
+   {
+    "internalType": "address",
+    "name": "sender",
+    "type": "address"
+   }
+  ],
+  "name": "SenderNotAllowedToUseHandle",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "ZamaProtocolUnsupported",
+  "type": "error"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "consultationId",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   }
+  ],
+  "name": "AccessWithdrawalMarked",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "consultationId",
+    "type": "uint256"
+   }
+  ],
+  "name": "ConsultationClosed",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "consultationId",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "patient",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "createdAt",
+    "type": "uint256"
+   }
+  ],
+  "name": "ConsultationCreated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "consultationId",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   }
+  ],
+  "name": "DoctorAccessGranted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "wallet",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "string",
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "indexed": false,
+    "internalType": "string",
+    "name": "specialty",
+    "type": "string"
+   }
+  ],
+  "name": "DoctorAdded",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   }
+  ],
+  "name": "DoctorDeactivated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "consultationId",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   }
+  ],
+  "name": "ResponseSubmitted",
+  "type": "event"
+ },
+ {
+  "inputs": [],
+  "name": "MAX_CHUNKS",
+  "outputs": [
+   {
+    "internalType": "uint8",
+    "name": "",
+    "type": "uint8"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MAX_DOCTORS",
+  "outputs": [
+   {
+    "internalType": "uint8",
+    "name": "",
+    "type": "uint8"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "wallet",
+    "type": "address"
+   },
+   {
+    "internalType": "string",
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "specialty",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "credentials",
+    "type": "string"
+   }
+  ],
+  "name": "addDoctor",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "admin",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "consultId",
+    "type": "uint256"
+   }
+  ],
+  "name": "closeConsultation",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "confidentialProtocolId",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "consultationCount",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   }
+  ],
+  "name": "deactivateDoctor",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "name": "doctorConsultations",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "doctorCount",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "doctorIdByAddress",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "name": "doctors",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address",
+    "name": "wallet",
+    "type": "address"
+   },
+   {
+    "internalType": "string",
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "specialty",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "credentials",
+    "type": "string"
+   },
+   {
+    "internalType": "bool",
+    "name": "active",
+    "type": "bool"
+   },
+   {
+    "internalType": "uint256",
+    "name": "consultationCount",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "getAllDoctorIds",
+  "outputs": [
+   {
+    "internalType": "uint256[]",
+    "name": "ids",
+    "type": "uint256[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "consultId",
+    "type": "uint256"
+   }
+  ],
+  "name": "getComplaintHandles",
+  "outputs": [
+   {
+    "internalType": "euint64[]",
+    "name": "handles",
+    "type": "bytes32[]"
+   },
+   {
+    "internalType": "uint8",
+    "name": "count",
+    "type": "uint8"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "consultId",
+    "type": "uint256"
+   }
+  ],
+  "name": "getConsultationMeta",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "patient",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   },
+   {
+    "internalType": "enum ConfidentialCare.ConsultStatus",
+    "name": "status",
+    "type": "uint8"
+   },
+   {
+    "internalType": "uint256",
+    "name": "createdAt",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint8",
+    "name": "complaintChunkCount",
+    "type": "uint8"
+   },
+   {
+    "internalType": "bool",
+    "name": "hasResponse",
+    "type": "bool"
+   },
+   {
+    "internalType": "uint8",
+    "name": "responseChunkCount",
+    "type": "uint8"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   }
+  ],
+  "name": "getDoctorConsultations",
+  "outputs": [
+   {
+    "internalType": "uint256[]",
+    "name": "",
+    "type": "uint256[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "patient",
+    "type": "address"
+   }
+  ],
+  "name": "getPatientConsultations",
+  "outputs": [
+   {
+    "internalType": "uint256[]",
+    "name": "",
+    "type": "uint256[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "consultId",
+    "type": "uint256"
+   }
+  ],
+  "name": "getResponseHandles",
+  "outputs": [
+   {
+    "internalType": "euint64[]",
+    "name": "handles",
+    "type": "bytes32[]"
+   },
+   {
+    "internalType": "uint8",
+    "name": "count",
+    "type": "uint8"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "consultId",
+    "type": "uint256"
+   }
+  ],
+  "name": "grantDoctorAccess",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "isDoctor",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "consultId",
+    "type": "uint256"
+   }
+  ],
+  "name": "markAccessWithdrawn",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "name": "patientConsultations",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "doctorId",
+    "type": "uint256"
+   },
+   {
+    "internalType": "externalEuint64[32]",
+    "name": "encryptedChunks",
+    "type": "bytes32[32]"
+   },
+   {
+    "internalType": "bytes",
+    "name": "inputProof",
+    "type": "bytes"
+   },
+   {
+    "internalType": "uint8",
+    "name": "chunkCount",
+    "type": "uint8"
+   }
+  ],
+  "name": "submitConsultation",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "consultId",
+    "type": "uint256"
+   },
+   {
+    "internalType": "externalEuint64[32]",
+    "name": "encryptedChunks",
+    "type": "bytes32[32]"
+   },
+   {
+    "internalType": "bytes",
+    "name": "inputProof",
+    "type": "bytes"
+   },
+   {
+    "internalType": "uint8",
+    "name": "chunkCount",
+    "type": "uint8"
+   }
+  ],
+  "name": "submitResponse",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "newAdmin",
+    "type": "address"
+   }
+  ],
+  "name": "transferAdmin",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ }
+]

@@ -112,7 +112,7 @@ describe("ConfidentialCare", function () {
       expect(meta.hasResponse).to.be.false;
     });
 
-    it("patient can grant and revoke doctor access", async function () {
+    it("patient can grant access and mark it withdrawn", async function () {
       // Submit consultation first
       const chunks = textToChunks("Headache for 3 days");
       const inputBuilder = fhevm.createEncryptedInput(contractAddress, patient1.address);
@@ -130,10 +130,10 @@ describe("ConfidentialCare", function () {
       const grantEvent = receipt.logs.find((l: any) => l.fragment?.name === "DoctorAccessGranted");
       expect(grantEvent).to.not.be.undefined;
 
-      // Revoke access
-      const revokeTx = await contract.connect(patient1).revokeDoctorAccess(1);
+      // Mark access withdrawn (signal only)
+      const revokeTx = await contract.connect(patient1).markAccessWithdrawn(1);
       const revokeReceipt = await revokeTx.wait();
-      const revokeEvent = revokeReceipt.logs.find((l: any) => l.fragment?.name === "DoctorAccessRevoked");
+      const revokeEvent = revokeReceipt.logs.find((l: any) => l.fragment?.name === "AccessWithdrawalMarked");
       expect(revokeEvent).to.not.be.undefined;
     });
 

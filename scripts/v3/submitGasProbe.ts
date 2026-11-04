@@ -15,7 +15,14 @@ async function main() {
   const c = new ethers.Contract(dep.address, abi, provider);
   const sdk = await sdkFor(w.patient, (hre.network.config as { url: string }).url);
   for (const n of [6, 16, 32]) {
-    const enc = await encryptUint64(sdk, dep.address, w.patient.address, Array.from({ length: n }, (_, i) => BigInt(i + 1)));
+    const t0 = Date.now();
+    console.log(`${n} chunks: encrypting…`);
+    const enc = await Promise.race([
+      encryptUint64(sdk, dep.address, w.patient.address, Array.from({ length: n }, (_, i) => BigInt(i + 1))),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`encryption of ${n} values timed out after 5 min`)), 300_000)),
+    ]).catch((e) => { console.log(`${n} chunks: ${e.message ?? e}`); return null; });
+    if (!enc) continue;
+    console.log(`${n} chunks: encrypted in ${Math.round((Date.now() - t0) / 1000)} s; bisecting gas…`);
     const data = c.interface.encodeFunctionData("submitConsultation", [1, [...enc.handles, ...Array(32 - n).fill(ethers.ZeroHash)], enc.inputProof, n]);
     const ok = async (gasLimit: bigint) => { try { await provider.call({ from: w.patient.address, to: dep.address, data, gasLimit }); return true; } catch { return false; } };
     let lo = 100_000n, hi = 16_777_216n;
@@ -24,4 +31,4 @@ async function main() {
     console.log(`${n} chunks: needs ≈ ${hi} gas (proof ${(enc.inputProof.length - 2) / 2} bytes)`);
   }
 }
-main().then(disposeAll).catch((e) => { console.error(e.message ?? e); process.exitCode = 1; });
+main().then(() => { disposeAll(); process.exit(0); }).catch((e) => { console.error(e.message ?? e); process.exit(1); });

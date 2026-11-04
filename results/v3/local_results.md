@@ -193,7 +193,7 @@ Tests: case 7 and "LIMITATION (7)".
 
   | Action | Gas budget |
   |---|---|
-  | submit + delegate | 5.5M |
+  | submit + delegate | `submitAndDelegateGas(chunks)` = 1M + 0.42M × chunks + 0.4M (3.92M for 6 chunks, 14.84M for 32). It replaced a flat 5.5M on 2026-11-04, after Sepolia measurements showed 13.52M gas for a 32-chunk submission. |
   | delegate | 400k |
   | revoke | 150k |
   | close | 150k |

@@ -6,10 +6,10 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import type { Doctor } from "@/libs/types";
-import { encryptText } from "@/libs/fhe-utils";
+import { encryptText, textToUint64Chunks } from "@/libs/fhe-utils";
 import { getErrorMessage } from "@/libs/errors";
 import { CONTRACT_ADDRESS, DELEGATION_DAYS, PATIENT_WALLET_TOPUP_ETH } from "@/libs/config";
-import { fundIfNeeded, GAS_BUDGET } from "@/libs/patient-wallets";
+import { fundIfNeeded, submitAndDelegateGas } from "@/libs/patient-wallets";
 
 function DoctorCard({ doc, onSelect }: { doc: Doctor; onSelect: () => void }) {
   const initials = doc.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -62,7 +62,7 @@ function ConsultModal({ doctor, onClose, onDone }: { doctor: Doctor; onClose: ()
       if (bound !== 0 && bound !== doctor.id) throw new Error("This patient wallet is already bound to another doctor.");
 
       setStatus("⛽ Funding your private wallet from your main wallet (this transfer is public)...");
-      await fundIfNeeded(patientWallet, await provider.getSigner(), GAS_BUDGET.submitAndDelegate, ethers.parseEther(PATIENT_WALLET_TOPUP_ETH));
+      await fundIfNeeded(patientWallet, await provider.getSigner(), submitAndDelegateGas(textToUint64Chunks(text).length), ethers.parseEther(PATIENT_WALLET_TOPUP_ETH));
 
       setStatus("🔐 Encrypting your symptoms with FHE...");
       const contractAddress = await contract.getAddress();

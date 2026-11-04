@@ -50,8 +50,14 @@ export async function signPatientSeed(
 }
 
 // Gas budgets used to decide whether a per-doctor wallet needs a top-up before an action.
+// Measured on Sepolia (2026-11-04, eth_call bisection with genuine input proofs):
+// submitConsultation needs ≈ 3.29M gas for 6 chunks, 7.15M for 16 and 13.52M for 32 (≈ 0.39M per chunk).
+export function submitAndDelegateGas(chunkCount: number): bigint {
+  const submit = BigInt(1_000_000) + BigInt(420_000) * BigInt(Math.max(1, chunkCount));
+  return submit + BigInt(400_000); // + the ACL delegation
+}
+
 export const GAS_BUDGET = {
-  submitAndDelegate: BigInt(5_500_000),
   delegate: BigInt(400_000),
   revoke: BigInt(150_000),
   close: BigInt(150_000),

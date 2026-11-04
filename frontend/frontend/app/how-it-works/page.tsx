@@ -66,7 +66,7 @@ function HowItWorksContent() {
           Regular encryption protects data at rest and in transit. FHE allows computation <em>directly on encrypted data</em> —
           so the blockchain processes your encrypted symptoms without ever decrypting them.
           This is fundamentally different from any other privacy technology.
-          The blockchain nodes and the contract owner cannot see your data; decryption needs a threshold of Zama's independent key-management nodes to cooperate.
+          The blockchain nodes and the contract owner cannot see your data; decryption needs a threshold of Zama&apos;s independent key-management nodes to cooperate.
         </div>
       </div>
 

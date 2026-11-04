@@ -1,0 +1,12 @@
+{
+  "address": "0x9cF0D8f6975C4779C40947D9fC10BCd43fB4427B",
+  "block": 12061986,
+  "txHash": "0x1a8930d2d5376312e02b7028a7212822cf0cfe6c0fd929be4f3744123dfc31fe",
+  "deployer": "0xe1E13AFe96d01C3a759B5679663b3781b9F1B349",
+  "deployedAt": "2026-11-04T11:01:00.691Z",
+  "commit": "01f4c659331486d58f0c5c5d8b9615406cf643a5",
+  "workingTreeDirty": false,
+  "sourceSha256": "de051fd07d6c58edbaf0b6d33c0b6ef67383caea761eb84c0262c37ade74f809",
+  "gasUsed": "15815726",
+  "verified": "https://sepolia.etherscan.io/address/0x9cF0D8f6975C4779C40947D9fC10BCd43fB4427B#code"
+}

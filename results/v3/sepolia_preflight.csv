@@ -1,0 +1,4 @@
+id,path,case,acl,verdict,http,label,message,shares,seconds
+P1,raw relayer,no delegation (valid permit),delegated=false delegatorAllowed=true,REFUSED_SERVER,POST:202 GET:400,not_allowed_on_host_acl,Not allowed on host ACL: ACL check failed for 1 handle(s): handle=0x6e277577…0500 check=isHandleDelegatedForUserDecryption,0,2.2
+P2,raw relayer,"same, corrupted signature",delegated=false delegatorAllowed=true,REFUSED_SERVER,POST:202 GET:400,not_allowed_on_host_acl,Not allowed on host ACL: ACL check failed for 1 handle(s): handle=0x6e277577…0500 check=isHandleDelegatedForUserDecryption,0,2.2
+P3,@zama-fhe/sdk,no delegation,delegated=false delegatorAllowed=true,REFUSED,(none: client-side),DelegationNotFoundError,No act…7D59,0,0.3

@@ -1,6 +1,6 @@
 # ConfidentialCare v3: Sepolia test plan (not run)
 
-Status: **plan only.** Nothing in this file has been executed except the read-only measurements marked *(measured)*.
+Status: **executed 2026-11-04** (all sections except §10, the manual browser checklist). Results: `results/v3/sepolia_results.md`.
 
 - **Prerequisites:** branch `v3-delegation-sdk-migration`, commit `6baf771`; local results in `results/v3/local_results.md`.
 - **Approval:** each batch below needs your approval before it runs.

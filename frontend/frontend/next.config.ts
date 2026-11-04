@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
+  // Dev only: keep compiled pages for an hour instead of ~60 s. The wallet/crypto stack is ~11.5k modules, so a
+  // disposed page costs ~30 s to recompile when you navigate back to it.
+  onDemandEntries: { maxInactiveAge: 60 * 60 * 1000, pagesBufferLength: 10 },
+
   webpack: (config) => {
     // Stub React Native module that MetaMask SDK tries to import in browser
     config.resolve.alias = {

@@ -420,9 +420,15 @@ describe("ConfidentialCare v3 — delegation-based access", function () {
             if (!/expirationDate\s*[,}:]/.test(callAt(src, m.index!))) out.push(`${rel}: delegateDecryption without expirationDate`);
             if (rel !== "frontend/frontend/libs/delegation.ts") out.push(`${rel}: delegateDecryption outside libs/delegation.ts`);
           }
-          for (const m of src.matchAll(/\bdelegateForUserDecryption\s*\(/g)) {
+          // Direct calls, ethers' populateTransaction/staticCall/estimateGas forms, and encodeFunctionData.
+          for (const m of src.matchAll(/\bdelegateForUserDecryption(?:\.(?:populateTransaction|staticCall|estimateGas|send))?\s*\(/g)) {
             if (/function\s+$/.test(src.slice(Math.max(0, m.index! - 20), m.index!))) continue;
             if (topLevelArgs(callAt(src, m.index!)) < 3) out.push(`${rel}: delegateForUserDecryption without expiry`);
+          }
+          for (const m of src.matchAll(/encodeFunctionData\s*\(\s*["']delegateForUserDecryption["']\s*,\s*\[/g)) {
+            const arr = callAt(src, m.index!);
+            const list = arr.slice(arr.indexOf("[") + 1, arr.lastIndexOf("]"));
+            if (topLevelArgs(`(${list})`) < 3) out.push(`${rel}: encodeFunctionData(delegateForUserDecryption) without expiry`);
           }
           if (/\b(delegateUserDecryptionWithoutExpiration|delegateUserDecryptionsWithoutExpiration)\b/.test(src)) out.push(`${rel}: FHE delegation without expiration`);
           return out;
@@ -433,7 +439,11 @@ describe("ConfidentialCare v3 — delegation-based access", function () {
         expect(scan("frontend/frontend/app/x.tsx", "sdk.delegations.delegateDecryption({ contractAddress: c, delegateAddress: d, expirationDate })")).to.have.length(1);
         expect(scan("scripts/x.ts", "await acl.delegateForUserDecryption(doctor, contract)")).to.have.length(1);
         expect(scan("contracts/X.sol", "FHE.delegateUserDecryptionWithoutExpiration(d, c);")).to.have.length(1);
+        expect(scan("scripts/x.ts", "await acl.delegateForUserDecryption.populateTransaction(doctor, contract)")).to.have.length(1);
+        expect(scan("scripts/x.ts", 'iface.encodeFunctionData("delegateForUserDecryption", [doctor, contract])')).to.have.length(1);
         expect(scan("scripts/x.ts", "await acl.delegateForUserDecryption(doctor, contract, expiry)")).to.have.length(0);
+        expect(scan("scripts/x.ts", "await acl.delegateForUserDecryption.populateTransaction(doctor, contract, expiry)")).to.have.length(0);
+        expect(scan("scripts/x.ts", 'iface.encodeFunctionData("delegateForUserDecryption", [doctor, contract, now + 300n])')).to.have.length(0);
 
         const problems = files.flatMap((f) => scan(path.relative(root, f).split(path.sep).join("/"), fs.readFileSync(f, "utf8")));
         expect(files.length).to.be.greaterThan(10);

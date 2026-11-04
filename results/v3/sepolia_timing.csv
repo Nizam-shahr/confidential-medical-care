@@ -1,0 +1,14 @@
+test,cycle,event,event_block,event_time,last_success_s,last_success_blocks,first_refusal_s,first_refusal_blocks,grant_to_first_decrypt_s,requests,notes
+T1b,1,revoke,12062043,2026-11-04T11:12:24.874Z,none,,6.9,0,,5,
+T2,1,grant,12062094,2026-11-04T11:22:48.842Z,,,,,0.1,,
+T2,1,revoke,12062095,2026-11-04T11:23:01.448Z,none,,0.1,0,,5,
+T2,2,grant,12062096,2026-11-04T11:23:13.040Z,,,,,0.2,,
+T2,2,revoke,12062097,2026-11-04T11:23:25.372Z,none,,0.1,0,,5,
+T2,3,grant,12062098,2026-11-04T11:23:37.178Z,,,,,0.1,,
+T2,3,revoke,12062099,2026-11-04T11:23:49.878Z,none,,0.1,0,,5,
+T2,4,grant,12062100,2026-11-04T11:24:00.489Z,,,,,0.1,,
+T2,4,revoke,12062101,2026-11-04T11:24:13.055Z,none,,0.1,0,,5,
+T2,5,grant,12062102,2026-11-04T11:24:24.882Z,,,,,0.1,,
+T2,5,revoke,12062103,2026-11-04T11:24:37.513Z,none,,0.1,0,,5,
+T3,1,expiry,12062133,2026-11-04T11:30:36.000Z,-4.5,-1,6.1,0,,63,expiry 1793791836; times relative to the first block with timestamp ≥ expiry
+T3,2,expiry,12062207,2026-11-04T11:45:48.000Z,-9.3,-1,4.2,0,,53,expiry 1793792748; times relative to the first block with timestamp ≥ expiry

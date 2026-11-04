@@ -204,7 +204,7 @@ Tests: case 7 and "LIMITATION (7)".
 
 **What this reveals.** The top-up is an ordinary ETH transfer from the main wallet to the per-doctor wallet. Together with `ConsultationCreated(patient = per-doctor wallet, doctorId)` and the ACL's `DelegatedForUserDecryption(per-doctor wallet → doctor)`, anyone can link **main wallet → per-doctor wallet → doctor**, and with two top-ups, both per-doctor wallets to each other. The per-doctor wallets isolate *data* between doctors; they do **not** hide that one person consulted several doctors.
 
-**Options to remove the link** (not built):
+**Options to remove the link** (none built, by decision):
 
 | Option | How | Fit with v3 |
 |---|---|---|
@@ -214,11 +214,24 @@ Tests: case 7 and "LIMITATION (7)".
 | Meta-transactions (ERC-2771) | A forwarder relays `submitConsultation`/`closeConsultation` | Partial only: the ACL's `delegateForUserDecryption`/`revoke…` need `msg.sender` = patient and the ACL has no ERC-2771, so those still need gas. |
 | Unlinkable funding (exchange withdrawal, privacy pool) | Fund each derived wallet from an unrelated source | Stopgap, operational burden, and policy/legal questions for privacy pools. |
 
+**Decision (2026-11-04): keep main-wallet funding; build no gas sponsorship.** The linkage above is a documented limitation of v3. On Sepolia it is visible in the seed transactions: patient main wallet 0x1A27…B339 → walletA 0x07bE…5054 and → walletB 0x2428…8944 (`results/v3/sepolia_results.md`, L1).
+
+**Future work: EIP-7702 + a sponsoring paymaster.** Each derived wallet stays an EOA (so the EIP-712 decryption permits, the input-proof binding and `msg.sender` on the ACL all keep working). It delegates its code to an audited smart-account implementation, and a paymaster pays gas through an ERC-4337 bundler. The main wallet never sends anything to the derived wallets.
+
+**This shifts trust to the sponsor:**
+- **Sponsor visibility.** The paymaster and bundler operator sees every sponsored operation: which derived wallet, which call (`submitConsultation` to doctor X, `delegateForUserDecryption`, `revoke…`, `closeConsultation`), when, and from which client/IP/session. The main-wallet ↔ per-doctor-wallet link disappears from the public chain but can be rebuilt from the sponsor's logs. Patients must trust the sponsor not to log, sell or disclose that link, or the sponsor must be designed not to learn it (blind or anonymous sponsorship credentials).
+- **Censorship and availability.** The sponsor can refuse to pay for an operation. The critical case is a sponsor that delays or refuses a **revocation or close**, which would keep a doctor's access alive. Revocation must therefore always remain possible without the sponsor, through a self-funded fallback with an explicit warning that it re-creates the link.
+- **Code-delegation risk.** With EIP-7702 the derived EOA runs the delegated implementation's code. A bug or a malicious implementation could act for the patient wallet (for example, delegate decryption to someone else or revoke silently). The implementation must be audited and pinned, and the frontend must refuse any other delegation target.
+- **On-chain anonymity set.** All sponsored wallets share the same paymaster on-chain. That hides *which* main wallet funded them, but only within the set of that paymaster's users; a small user base gives little cover.
+- **Sponsor policy.** Abuse limits (rate limits, proof of personhood) are needed, and each one tends to re-identify the user to the sponsor.
+
+The other options (an ERC-4337 smart account per doctor with a paymaster, an app-run gas station, ERC-2771 meta-transactions, unlinkable funding sources) remain listed in the table above for the paper. Of these, only EIP-7702 + a paymaster keeps the EOA semantics that Zama's decryption permits rely on.
+
 ---
 
 ## 5. Limitations
 
-1. **Gas funding links the wallets.** See §4. A relayer or paymaster is future work.
+1. **Gas funding links the wallets.** By decision, the main wallet funds the per-doctor wallets (see §4). EIP-7702 plus a paymaster is future work; it moves the link from the public chain to the sponsor, together with censorship and code-delegation risks.
 2. **The doctor can copy plaintext.** Revocation, expiry and closing stop *future* decryption only.
 3. **The doctor can read their own reply while delegated** (D1, accepted).
 4. **Revocation and expiry on Zama's servers are not yet confirmed.** All local refusals are client-side checks of on-chain state. The gateway's synced ACL copy (Q7) may lag by about 10 blocks, according to `@zama-fhe/sdk`'s own docs, or by an unknown time. Until the Sepolia plan is run, "closed ⇒ no access" holds for the host-chain ACL only.
@@ -241,6 +254,6 @@ Tests: case 7 and "LIMITATION (7)".
 
 ---
 
-## 6. Next step
+## 6. Sepolia
 
-The Sepolia test plan is in `results/v3/sepolia_plan.md`. Nothing will be deployed until you approve it.
+v3 is deployed at 0x9cF0…427B (verified). The Sepolia results are in `results/v3/sepolia_results.md`.

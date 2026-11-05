@@ -303,4 +303,4 @@ Built for the **Zama Developer Program — Builder Track, Mainnet Season 2**
 ---
 
 ## 📄 License
-BSD 3-Clause Clear
+BSD 3-Clause Clear (see LICENSE)
